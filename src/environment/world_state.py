@@ -16,12 +16,13 @@ class WorldState:
     SHELF_LEFT_POS = np.array([-5.0, 0.0, 10.0])
     SHELF_RIGHT_POS = np.array([5.0, 0.0, 10.0])
     SHELF_REACH_RADIUS = 1.5  # Distance to consider "reached shelf"
+    GRASP_RADIUS = 2.0  # Distance to consider "near object for grasping"
     
     # Fly parameters
     FLY_START_POS = np.array([0.0, 0.0, 0.0])
     FLY_MOVE_SPEED = 0.1  # Units per timestep when moving forward
     FLY_TURN_SPEED = 0.15  # Radians per timestep when turning
-    
+
     def __init__(self, target_shelf=0, seed=None):
         """
         Args:
@@ -38,7 +39,8 @@ class WorldState:
         # Object on target shelf
         self.object_pos = (self.SHELF_LEFT_POS if target_shelf == 0 
                           else self.SHELF_RIGHT_POS).copy()
-    
+        self.object_is_carried = False
+        self.object_delivered = False
     def reset(self, target_shelf=None, seed=None):
         """Reset world to initial state."""
         if seed is not None:
@@ -53,7 +55,8 @@ class WorldState:
         self.fly_yaw = 0.0
         self.object_pos = (self.SHELF_LEFT_POS if self.target_shelf == 0
                           else self.SHELF_RIGHT_POS).copy()
-    
+        self.object_is_carried = False
+        self.object_delivered = False
     def update_fly(self, forward_activation, turn_activation):
         """
         Update fly position based on motor neuron activations.
@@ -75,6 +78,31 @@ class WorldState:
             # Wrap angle to [-pi, pi]
             self.fly_yaw = np.arctan2(np.sin(self.fly_yaw), np.cos(self.fly_yaw))
     
+    def update_grasp(self, grasp_activation, release_activation):
+        """
+        Grasping state machine update.
+        
+        Args:
+            grasp_activation: float (0-1), front-leg neuron activation
+            release_activation: float (0-1), release command
+        """
+        dist_to_obj = np.linalg.norm(self.fly_pos - self.object_pos)
+        
+        # Pick up object if near, not already carrying/delivered, and front-leg neurons fire
+        if not self.object_is_carried and not self.object_delivered:
+            if dist_to_obj < self.GRASP_RADIUS and grasp_activation > 0.2:
+                self.object_is_carried = True
+        
+        # Carry object while moving
+        if self.object_is_carried:
+            offset = np.array([np.sin(self.fly_yaw) * 0.4, 0.0, np.cos(self.fly_yaw) * 0.4])
+            self.object_pos = self.fly_pos + offset
+            
+            # Drop at target shelf or via release activation
+            if release_activation > 0.3 or self.at_target_shelf():
+                self.object_is_carried = False
+                if self.at_target_shelf():
+                    self.object_delivered = True
     def distance_to_shelf(self, shelf_idx):
         """Distance from fly to shelf (0=left, 1=right)."""
         shelf_pos = self.SHELF_LEFT_POS if shelf_idx == 0 else self.SHELF_RIGHT_POS
@@ -118,7 +146,10 @@ class WorldState:
             target_one_hot,
             [self.distance_to_shelf(0)],
             [self.distance_to_shelf(1)],
-            [angle_to_target]
+            [angle_to_target],
+            [np.linalg.norm(self.fly_pos - self.object_pos)],
+            [1.0 if self.object_is_carried else 0.0],
+            [1.0 if self.object_delivered else 0.0]
         ])
         
         return obs.astype(np.float32)
@@ -135,7 +166,8 @@ class WorldState:
                 'right': self.SHELF_RIGHT_POS.tolist()
             },
             'object': {
-                'position': self.object_pos.tolist()
+                'position': self.object_pos.tolist(),
+                'is_carried': bool(self.object_is_carried),
+                'delivered': bool(self.object_delivered)
             },
-            'target_shelf': int(self.target_shelf)
         }

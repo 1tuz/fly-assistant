@@ -18,6 +18,23 @@
             <div>Motor Turn L: <span id="motor_turn_l">-</span> Hz</div>
             <div>Motor Turn R: <span id="motor_turn_r">-</span> Hz</div>
         </div>
+        <div id="folder-controls" style="margin-top: 15px; border-top: 1px solid #333; padding-top: 10px;">
+            <div style="font-weight: 600; margin-bottom: 8px;">📂 Virtual Filesystem</div>
+            <div>Current Path: <span id="current-path">/root/documents</span></div>
+            <div style="margin: 8px 0; display: flex; align-items: center; justify-content: space-between;">
+                <label for="depth-slider">Nesting Depth:</label>
+                <input type="range" id="depth-slider" min="0" max="4" value="1" style="width: 100px;">
+                <span id="depth-val">1</span>
+            </div>
+            <div>Active Files: <span id="file-count">4</span></div>
+        </div>
+        <div id="file-metadata" style="margin-top: 10px; border-top: 1px solid #333; padding-top: 10px; font-size: 12px;">
+            <div style="font-weight: 600; margin-bottom: 4px;">🏷️ Selected File</div>
+            <div>Name: <span id="meta-name">q3_report.pdf</span></div>
+            <div>Size: <span id="meta-size">2.0 MB</span></div>
+            <div>Tag: <span id="meta-tag" style="color: #4af;">finance</span></div>
+            <div>State: <span id="meta-state">On Shelf</span></div>
+        </div>
     </div>
     
     <div id="container"></div>

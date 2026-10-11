@@ -20,29 +20,64 @@ from agent import LinearPolicy, SimpleES
 
 
 def evaluate_policy(env, policy, n_episodes=5, seed=0):
-    """Evaluate policy over multiple episodes."""
+    """
+    Evaluate policy over multiple episodes.
+    
+    Tracks returns, success, grasping, and delivery metrics.
+    """
     returns = []
     success_count = 0
+    grasp_count = 0
+    delivery_count = 0
     
     for i in range(n_episodes):
         obs, info = env.reset(seed=seed + i)
         episode_return = 0.0
         terminated = False
         truncated = False
+        episode_grasped = False
+        episode_delivered = False
         
         while not (terminated or truncated):
             action = policy(obs)
+            # Ensure action has at least 5 dimensions if needed
+            if len(action) < getattr(env, 'action_dim', 5):
+                action = np.pad(action, (0, getattr(env, 'action_dim', 5) - len(action)), mode='constant')
+            
             obs, reward, terminated, truncated, info = env.step(action)
             episode_return += reward
+            
+            # Check grasping and delivery status
+            if info.get('object_carried', False) or info.get('object_delivered', False):
+                episode_grasped = True
+            if info.get('object_delivered', False):
+                episode_delivered = True
         
+        # Check world state directly if available
+        if getattr(env, 'world', None) is not None:
+            if getattr(env.world, 'object_delivered', False):
+                episode_delivered = True
+            if getattr(env.world, 'object_is_carried', False):
+                episode_grasped = True
+                
         returns.append(episode_return)
-        if episode_return > 0.5:  # Success if positive return
+        
+        # Update metrics: delivery counts as task success
+        if episode_delivered:
+            delivery_count += 1
             success_count += 1
+        elif episode_return > 0.5:  # Fallback success definition
+            success_count += 1
+            
+        if episode_grasped:
+            grasp_count += 1
     
     return {
         'mean_return': float(np.mean(returns)),
         'std_return': float(np.std(returns)),
-        'success_rate': success_count / n_episodes,
+        'success_rate': float(success_count / n_episodes),
+        'grasp_success_rate': float(grasp_count / n_episodes),
+        'delivery_rate': float(delivery_count / n_episodes),
         'returns': returns
     }
 
@@ -66,8 +101,25 @@ def train(args):
     print(f"✓ Environment ready (obs_dim={env.observation_dim}, action_dim={env.action_dim})")
     print("")
     
-    # Initialize policy and optimizer
-    policy = LinearPolicy(env.observation_dim, env.action_dim, seed=args.seed)
+    # Initialize policy and optimizer with 5D action scaling
+    action_scale = None
+    if env.action_dim == 5:
+        action_scale = [
+            getattr(args, 'action_scale', 50.0),
+            getattr(args, 'action_scale', 50.0),
+            getattr(args, 'action_scale', 50.0),
+            getattr(args, 'grasp_scale', 100.0),
+            getattr(args, 'release_scale', 100.0)
+        ]
+    elif hasattr(args, 'action_scale'):
+        action_scale = [args.action_scale] * env.action_dim
+
+    policy = LinearPolicy(
+        obs_dim=env.observation_dim,
+        action_dim=env.action_dim,
+        action_scale=action_scale,
+        seed=args.seed
+    )
     num_params = policy.get_params().shape[0]
     
     es = SimpleES(
@@ -78,7 +130,8 @@ def train(args):
         seed=args.seed
     )
     
-    print(f"Policy: {num_params} parameters")
+    print(f"Policy: {num_params} parameters (obs_dim={env.observation_dim}, action_dim={env.action_dim})")
+    print(f"Action scaling: {policy.action_scale.tolist()}")
     print(f"ES: population={args.population}, σ={args.sigma}, lr={args.lr}")
     print("")
     
@@ -118,6 +171,8 @@ def train(args):
             'max_reward': float(np.max(rewards)),
             'best_policy_return': best_result['mean_return'],
             'best_policy_success': best_result['success_rate'],
+            'best_policy_grasp_success': best_result['grasp_success_rate'],
+            'best_policy_delivery_rate': best_result['delivery_rate'],
             'time': gen_time
         }
         training_log.append(log_entry)
@@ -129,13 +184,17 @@ def train(args):
             print(f"Gen {gen:3d} | "
                   f"pop_mean={np.mean(rewards):6.3f} pop_max={np.max(rewards):6.3f} | "
                   f"best_return={best_result['mean_return']:6.3f} "
-                  f"success={best_result['success_rate']:.1%} | "
+                  f"success={best_result['success_rate']:.1%} "
+                  f"grasp={best_result['grasp_success_rate']:.1%} "
+                  f"deliver={best_result['delivery_rate']:.1%} | "
                   f"{gen_time:.1f}s ⭐ NEW BEST")
         else:
             print(f"Gen {gen:3d} | "
                   f"pop_mean={np.mean(rewards):6.3f} pop_max={np.max(rewards):6.3f} | "
                   f"best_return={best_result['mean_return']:6.3f} "
-                  f"success={best_result['success_rate']:.1%} | "
+                  f"success={best_result['success_rate']:.1%} "
+                  f"grasp={best_result['grasp_success_rate']:.1%} "
+                  f"deliver={best_result['delivery_rate']:.1%} | "
                   f"{gen_time:.1f}s")
         
         # Save checkpoint every 10 generations
@@ -150,6 +209,9 @@ def train(args):
     print("")
     print(f"✅ Training complete!")
     print(f"Best return: {best_return:.3f}")
+    if 'best_result' in locals() and best_result:
+        print(f"Final best grasp success: {best_result['grasp_success_rate']:.1%}")
+        print(f"Final best delivery rate: {best_result['delivery_rate']:.1%}")
     print(f"Policies saved to: {output_dir}")
     
     env.close()
@@ -175,7 +237,12 @@ def main():
                        help='Random seed')
     parser.add_argument('--output', type=str, default='runs/training',
                        help='Output directory')
-    
+    parser.add_argument('--action-scale', type=float, default=50.0,
+                       help='Base scaling factor for movement actions')
+    parser.add_argument('--grasp-scale', type=float, default=100.0,
+                       help='Scaling factor for grasp action')
+    parser.add_argument('--release-scale', type=float, default=100.0,
+                       help='Scaling factor for release action')
     args = parser.parse_args()
     train(args)
 

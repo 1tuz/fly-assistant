@@ -6,7 +6,10 @@ The fly must navigate to the correct shelf based on a visual target indicator.
 """
 import numpy as np
 from .world_state import WorldState
-from ..brain import BrainAdapter
+try:
+    from ..brain import BrainAdapter
+except ImportError:
+    from brain import BrainAdapter
 
 
 class ShelfTaskEnv:
@@ -44,9 +47,9 @@ class ShelfTaskEnv:
         self.episode_reward = 0.0
         
         # Action/observation spaces (for reference)
-        self.action_dim = 3  # [forward, turn_left, turn_right] in Hz
+        self.action_dim = 5  # [forward, turn_left, turn_right, grasp, release] in Hz
         self.action_max = 250.0  # Max Poisson rate
-        self.observation_dim = 10
+        self.observation_dim = 13
     
     def reset(self, seed=None, options=None):
         """
@@ -94,15 +97,19 @@ class ShelfTaskEnv:
         """
         self.steps += 1
         
-        # Clip actions to valid range
+        # Clip actions to valid range and pad if needed
         action = np.clip(action, 0.0, self.action_max)
+        if len(action) < 5:
+            action = np.pad(action, (0, 5 - len(action)), mode='constant')
         
         # Prepare brain input
         brain_action = {
             'visual_target': self.world.target_shelf,
             'forward': float(action[0]),
             'turn_left': float(action[1]),
-            'turn_right': float(action[2])
+            'turn_right': float(action[2]),
+            'grasp_left': float(action[3]),
+            'grasp_right': float(action[3])
         }
         
         # Run brain simulation
@@ -117,20 +124,26 @@ class ShelfTaskEnv:
         turn_right_rate = brain_output['turn_right']
         turn_activation = np.clip((turn_right_rate - turn_left_rate) / 50.0, -1.0, 1.0)
         
-        # Update world physics
+        # Grasp and release activation from brain output and action
+        grasp_left_rate = brain_output.get('grasp_left', 0.0)
+        grasp_right_rate = brain_output.get('grasp_right', 0.0)
+        grasp_activation = min((grasp_left_rate + grasp_right_rate + float(action[3])) / 100.0, 1.0)
+        release_activation = min(float(action[4]) / 250.0, 1.0)
+        
+        # Update world physics and grasping
         self.world.update_fly(forward_activation, turn_activation)
+        self.world.update_grasp(grasp_activation, release_activation)
         
         # Check termination conditions
         terminated = False
         reward = -0.001  # Small step penalty to encourage speed
         
-        if self.world.at_target_shelf():
+        if self.world.object_delivered:
             reward = 1.0
             terminated = True
         elif self.world.at_wrong_shelf():
             reward = -1.0
             terminated = True
-        
         truncated = self.steps >= self.max_steps
         
         self.episode_reward += reward
@@ -143,6 +156,10 @@ class ShelfTaskEnv:
             'motor_forward': brain_output['forward'],
             'motor_turn_left': brain_output['turn_left'],
             'motor_turn_right': brain_output['turn_right'],
+            'motor_grasp_left': brain_output.get('grasp_left', 0.0),
+            'motor_grasp_right': brain_output.get('grasp_right', 0.0),
+            'object_carried': self.world.object_is_carried,
+            'object_delivered': self.world.object_delivered,
             'world': self.world.to_dict()
         }
         

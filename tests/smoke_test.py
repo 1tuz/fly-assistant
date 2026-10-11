@@ -40,9 +40,17 @@ def test_world_state():
         
         # Test observation
         obs = world.get_observation()
-        assert obs.shape == (10,)
+        assert obs.shape == (13,)
         
-        print("✓ World state OK")
+        # Test grasping
+        world.fly_pos = world.object_pos.copy()  # Move fly to object
+        world.update_grasp(0.5, 0.0)
+        assert world.object_is_carried
+        
+        world.update_grasp(0.0, 0.5)
+        assert not world.object_is_carried
+        
+        print("✓ World state and grasping OK")
         return True
     except Exception as e:
         print(f"✗ World state failed: {e}")

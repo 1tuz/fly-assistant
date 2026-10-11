@@ -73,19 +73,29 @@ class BrainAdapter:
         self.turn_left = self._find_neurons("^LAL018$", side="L")  # → DNa01/02
         self.turn_right = self._find_neurons("^LAL018$", side="R")
         
-        # Readout channels (descending neurons)
+        # Front leg descending neurons (DNg12_e) for reaching / grasping
+        self.grasp_left = self._find_neurons("^DNg12_e$", side="L")
+        self.grasp_right = self._find_neurons("^DNg12_e$", side="R")
+        
+        # Readout channels (descending neurons & motor neurons)
         self.readout_fwd = self._find_neurons("^DNp09$")
         self.readout_turn_left = self._find_neurons("^DNa0[12]$", side="L")
         self.readout_turn_right = self._find_neurons("^DNa0[12]$", side="R")
+        self.readout_grasp_left = self._find_neurons("^T1L_pro$")
+        self.readout_grasp_right = self._find_neurons("^T1R_pro$")
         
         print(f"Input channels: visual_left={len(self.visual_left)}, "
               f"visual_right={len(self.visual_right)}, "
               f"forward={len(self.forward)}, "
               f"turn_left={len(self.turn_left)}, "
-              f"turn_right={len(self.turn_right)}")
+              f"turn_right={len(self.turn_right)}, "
+              f"grasp_left={len(self.grasp_left)}, "
+              f"grasp_right={len(self.grasp_right)}")
         print(f"Output channels: fwd={len(self.readout_fwd)}, "
               f"turn_left={len(self.readout_turn_left)}, "
-              f"turn_right={len(self.readout_turn_right)}")
+              f"turn_right={len(self.readout_turn_right)}, "
+              f"grasp_left={len(self.readout_grasp_left)}, "
+              f"grasp_right={len(self.readout_grasp_right)}")
     
     def _find_neurons(self, pattern, side=None):
         """Find neuron indices matching pattern and optional side."""
@@ -134,6 +144,10 @@ class BrainAdapter:
             stim[tuple(self.turn_left)] = float(action['turn_left'])
         if action.get('turn_right', 0) > 0:
             stim[tuple(self.turn_right)] = float(action['turn_right'])
+        if action.get('grasp_left', 0) > 0:
+            stim[tuple(self.grasp_left)] = float(action['grasp_left'])
+        if action.get('grasp_right', 0) > 0:
+            stim[tuple(self.grasp_right)] = float(action['grasp_right'])
         
         # Run simulation
         self.sim.run(stim, ms)
@@ -156,6 +170,8 @@ class BrainAdapter:
             'forward': channel_rate(self.readout_fwd),
             'turn_left': channel_rate(self.readout_turn_left),
             'turn_right': channel_rate(self.readout_turn_right),
+            'grasp_left': channel_rate(self.readout_grasp_left),
+            'grasp_right': channel_rate(self.readout_grasp_right),
             'n_active': int(self.sim.n_active),
             'total_spikes': int(self.sim.spikes.sum())
         }
