@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  fly-assistant:
+    build: .
+    ports:
+      - "8766:8766"
+    volumes:
+      # Mount directory with your files (fly will move them between folders)
+      - ./mock_data:/data:rw
+      # Mount runs directory to save training results
+      - ./runs:/app/runs:rw
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+
+  # Run training in separate container
+  training:
+    build: .
+    volumes:
+      - ./mock_data:/data:rw
+      - ./runs:/app/runs:rw
+    environment:
+      - PYTHONUNBUFFERED=1
+    command: python train.py --generations 50 --population 30
+    profiles:
+      - training  # Only starts with: docker-compose --profile training up
