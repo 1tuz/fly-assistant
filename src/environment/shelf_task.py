@@ -64,8 +64,8 @@ class ShelfTaskEnv:
         if seed is not None:
             np.random.seed(seed)
         
-        # Reset world (randomizes target shelf)
-        self.world.reset(seed=seed)
+        # A fixed target can be supplied for a multi-item sorting run.
+        self.world.reset(target_shelf=(options or {}).get('target_shelf'), seed=seed)
         
         # Reset brain simulation
         self.brain.reset(seed=seed)

@@ -5,6 +5,10 @@ export function shelfLabelPosition(height) {
     return [0, height + SHELF_LABEL_SIZE[1] / 2 + 0.55, -0.45];
 }
 
+export function inventoryBookPosition(slot) {
+    return [BOOKS_POSITION[0] + slot * 0.09, BOOKS_POSITION[1], BOOKS_POSITION[2]];
+}
+
 export function taskObjectPosition(position, onShelf, scale = 0.5) {
     return [position[0] * scale, onShelf ? 0 : (position[1] + 0.4) * scale, position[2] * scale];
 }

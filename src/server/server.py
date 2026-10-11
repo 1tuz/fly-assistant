@@ -109,17 +109,28 @@ def run_simulation():
     try:
         sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
         from environment import ShelfTaskEnv
+        from environment.inventory import create_inventory, deliver_item
 
         env = ShelfTaskEnv(max_steps=300, step_ms=50)
         seed = int(time.time())
         mode, policy, manual_action = "autonomous", None, [0.0] * 5
         state = "stopped"
+        inventory = create_inventory()
+        delivered_items = 0
+        target_shelf = 1
+        active_item_id = inventory[0]["id"]
 
         def reset():
-            env.reset(seed=seed)
+            env.reset(seed=seed, options={"target_shelf": target_shelf})
             STATE.update(env.world.to_dict(), {
                 "steps": 0,
                 "target_shelf": env.world.target_shelf,
+                "inventory": inventory,
+                "active_item_id": active_item_id if delivered_items < 4 else None,
+                "active_item": inventory[delivered_items] if delivered_items < 4 else None,
+                "delivered_items": delivered_items,
+                "total_items": 4,
+                "task_status": f"Sorting Projects book {delivered_items + 1} of 4" if delivered_items < 4 else "All books sorted",
                 "brain_activity": 0,
                 "motor_forward": 0.0,
                 "motor_turn_left": 0.0,
@@ -134,6 +145,9 @@ def run_simulation():
             if command.get("reset"):
                 seed += 1
                 policy = None
+                inventory = create_inventory()
+                delivered_items = 0
+                active_item_id = inventory[0]["id"]
                 reset()
             if "mode" in command:
                 mode = command["mode"]
@@ -146,6 +160,10 @@ def run_simulation():
                 else:
                     policy = None
                 state = "running" if mode != "stopped" else "stopped"
+                if mode == "autonomous":
+                    inventory = create_inventory()
+                    delivered_items = 0
+                    active_item_id = inventory[0]["id"]
                 if mode == "train":
                     state = "training"
                     STOP_TRAINING.clear()
@@ -169,12 +187,41 @@ def run_simulation():
 
             _, _, terminated, truncated, info = env.step(action)
             info.update(mode=mode, status=state)
+            if mode == "autonomous":
+                info.update(
+                    inventory=inventory,
+                    active_item_id=active_item_id,
+                    active_item=inventory[delivered_items],
+                    delivered_items=delivered_items,
+                    total_items=4,
+                    task_status=f"Sorting Projects book {delivered_items + 1} of 4",
+                )
             STATE.update(info["world"], info)
             if terminated or truncated:
                 if terminated:
-                    info["task_status"] = "delivered" if info["object_delivered"] else "missed target"
+                    if mode == "autonomous" and info["object_delivered"]:
+                        deliver_item(inventory, active_item_id, target_shelf)
+                        delivered_items += 1
+                        info.update(
+                            inventory=inventory,
+                            delivered_items=delivered_items,
+                            total_items=4,
+                            active_item_id=None if delivered_items == 4 else inventory[delivered_items]["id"],
+                            active_item=None if delivered_items == 4 else inventory[delivered_items],
+                            task_status=f"Sorted {delivered_items} of 4 books" if delivered_items < 4 else "Sorting complete: all 4 books are on Projects",
+                        )
+                    else:
+                        info["task_status"] = "delivered" if info["object_delivered"] else "missed target"
                     STATE.update(info["world"], info)
                     time.sleep(1.0)
+                    if mode == "autonomous" and delivered_items == 4:
+                        state = "completed"
+                        STATE.annotate(status=state, task_status="Sorting complete: all 4 books are on Projects")
+                        continue
+                    if mode == "autonomous" and info["object_delivered"]:
+                        active_item_id = inventory[delivered_items]["id"]
+                elif mode == "autonomous":
+                    STATE.annotate(task_status="Retrying the same book and direction")
                 seed += 1
                 reset()
             else:
@@ -292,7 +339,7 @@ def run_server(port=8766):
     """Start HTTP server."""
     STOP_SIMULATION.clear()
     STOP_TRAINING.clear()
-    set_command({"status": "running"})
+    set_command({"status": "stopped"})
     threading.Thread(target=run_simulation, daemon=True).start()
     with http.server.ThreadingHTTPServer(("", port), FlyAssistantHandler) as httpd:
         print(f"🪰 Server running at http://127.0.0.1:{port}")

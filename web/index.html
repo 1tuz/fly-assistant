@@ -15,30 +15,22 @@
         <div id="camera-controls">
             <button id="camera-reset" type="button">Reset camera</button>
             <button id="camera-follow" type="button" aria-pressed="false">Follow fly: off</button>
-            <small>WASD move · Q/E down/up · Shift faster · drag to look · double-click to focus</small>
         </div>
         <div id="operation-controls">
-            <label for="sim-mode">Simulation mode</label>
+            <label for="sim-mode">Mode</label>
             <select id="sim-mode">
-                <option value="autonomous">Autonomous</option>
-                <option value="manual">Manual</option>
-                <option value="train">Training</option>
+                <option value="autonomous">Sort misfiled books</option>
+                <option value="train">Train fly</option>
                 <option value="replay">Replay trained policy</option>
             </select>
             <button id="sim-start" type="button">Start</button>
             <button id="sim-stop" type="button">Stop</button>
             <button id="sim-reset" type="button">Reset</button>
-            <div id="manual-controls" aria-label="Manual fly controls">
-                <button data-action="forward" type="button">Forward</button>
-                <button data-action="left" type="button">Turn left</button>
-                <button data-action="right" type="button">Turn right</button>
-                <button data-action="grasp" type="button">Grasp</button>
-                <button data-action="release" type="button">Release</button>
-            </div>
             <div id="training-progress">Training idle</div>
         </div>
         <div id="metrics">
             <div>Target Shelf: <span id="target">-</span></div>
+            <div>Books sorted: <span id="inventory-progress">0 / 4</span></div>
             <div>Steps: <span id="steps">-</span></div>
             <div>Brain Activity: <span id="brain_activity">-</span> neurons</div>
             <div>Motor Forward: <span id="motor_fwd">-</span> Hz</div>

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import { BOOKS_POSITION, SHELF_LABEL_SIZE, shelfLabelPosition, taskObjectPosition, tripodPhase } from '../web/scene-layout.js';
+import { BOOKS_POSITION, SHELF_LABEL_SIZE, inventoryBookPosition, shelfLabelPosition, taskObjectPosition, tripodPhase } from '../web/scene-layout.js';
 
 test('shelf label clears the cabinet and sits in front of it', async () => {
     const sceneCode = await readFile(new URL('../web/scene.js', import.meta.url), 'utf8');
@@ -17,30 +17,14 @@ test('shelf label clears the cabinet and sits in front of it', async () => {
     assert.equal(x, 0);
 });
 
-test('book row sits on a shelf within the cabinet instead of intersecting its textured mesh', async () => {
+test('categorized inventory books use individual shelf slots and share the carried book model', async () => {
     const sceneCode = await readFile(new URL('../web/scene.js', import.meta.url), 'utf8');
-    assert.equal(sceneCode.includes('books.position.fromArray(BOOKS_POSITION)'), true);
+    assert.equal(sceneCode.includes('inventoryBookTemplate.clone(true)'), true);
+    assert.equal(sceneCode.includes('createCategoryBadge(item.category)'), true);
+    assert.equal(sceneCode.includes('book.visible = item.id !== activeItemId'), true);
     assert.equal(sceneCode.includes('objectMesh.position.fromArray(taskObjectPosition(state.object.position, onShelf, VISUAL_SCALE))'), true);
-    assert.equal(sceneCode.includes('if (index === 0) books.getObjectByName(movingBook.name)'), false);
-    const [shelf, books] = await Promise.all([
-        readFile(new URL('../web/assets/shelf-01/Shelf_01.gltf', import.meta.url), 'utf8').then(JSON.parse),
-        readFile(new URL('../web/assets/books/books.gltf', import.meta.url), 'utf8').then(JSON.parse),
-    ]);
-    const shelfBounds = shelf.accessors[shelf.meshes[0].primitives[0].attributes.POSITION];
-    const front = -shelfBounds.max[2];
-    const back = -shelfBounds.min[2];
-
-    for (const node of books.nodes) {
-        const mesh = books.meshes[node.mesh];
-        const bounds = books.accessors[mesh.primitives[0].attributes.POSITION];
-        const zMin = BOOKS_POSITION[2] + (node.translation?.[2] ?? 0) + bounds.min[2];
-        const zMax = BOOKS_POSITION[2] + (node.translation?.[2] ?? 0) + bounds.max[2];
-        const yMin = BOOKS_POSITION[1] + (node.translation?.[1] ?? 0) + bounds.min[1];
-        const yMax = BOOKS_POSITION[1] + (node.translation?.[1] ?? 0) + bounds.max[1];
-        assert.ok(zMin >= front && zMax <= back, `${node.name} lies outside the shelf depth`);
-        assert.ok(yMin >= 0.3549 && yMax < 0.629, `${node.name} does not fit on the bottom book tier`);
-    }
-    assert.equal(sceneCode.includes('books.getObjectByName(movingBook.name)?.removeFromParent()'), true);
+    assert.deepEqual(inventoryBookPosition(0), BOOKS_POSITION);
+    assert.deepEqual(inventoryBookPosition(4), [BOOKS_POSITION[0] + 0.36, BOOKS_POSITION[1], BOOKS_POSITION[2]]);
     assert.equal(BOOKS_POSITION[1], 0.355);
 });
 

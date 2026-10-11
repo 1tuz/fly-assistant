@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createFly as createFlyModel, REST } from './fly-model.js';
-import { BOOKS_POSITION, SHELF_LABEL_SIZE, shelfLabelPosition, taskObjectPosition, tripodPhase } from './scene-layout.js';
+import { BOOKS_POSITION, SHELF_LABEL_SIZE, inventoryBookPosition, shelfLabelPosition, taskObjectPosition, tripodPhase } from './scene-layout.js';
 
 // Scene state
 let scene, camera, renderer;
@@ -11,6 +11,9 @@ let flyModel, flySpeed = 0, previousFlyPosition = null, lastFlySample = 0, gaitP
 let lastAnimationFrame = performance.now();
 let taskBookMesh;
 let taskBookRestPosition;
+let inventoryBookTemplate;
+const inventoryBookMeshes = new Map();
+let activeCategoryBadge;
 let leftShelfBookcase, rightShelfBookcase;
 const assetLoader = new GLTFLoader();
 let currentState = null;
@@ -362,9 +365,8 @@ async function loadShelfAssets() {
             assetLoader.loadAsync('./assets/shelf-01/Shelf_01.gltf'),
             assetLoader.loadAsync('./assets/books/books.gltf')
         ]);
-        const bookSource = bookAsset.scene;
-        const movingBook = bookSource.getObjectByName('book_encyclopedia_set_01_book01');
-        if (!movingBook) throw new Error('Transferable volume is missing from the local book model');
+        inventoryBookTemplate = bookAsset.scene.getObjectByName('book_encyclopedia_set_01_book01');
+        if (!inventoryBookTemplate) throw new Error('Transferable volume is missing from the local book model');
         const shelves = [leftShelfBookcase, rightShelfBookcase];
         for (const shelf of shelves) {
             shelf.clearFiles();
@@ -383,24 +385,73 @@ async function loadShelfAssets() {
             shelf.labelSprite.position.fromArray(shelfLabelPosition(cabinetHeight));
             shelf.group.add(cabinet);
 
-            const books = bookSource.clone(true);
-            books.position.fromArray(BOOKS_POSITION);
-            books.traverse(node => {
-                if (!node.name.startsWith('book_encyclopedia_set_01_book')) return;
-                node.userData.fileData = { name: `Encyclopedia volume ${node.name.slice(-2)}`, markers: { tag: 'reference book' } };
-                node.userData.state = 'On shelf';
-            });
-            books.getObjectByName(movingBook.name)?.removeFromParent();
-            shelf.group.add(books);
         }
-        taskBookMesh = movingBook.clone(true);
+        taskBookMesh = inventoryBookTemplate.clone(true);
         taskBookRestPosition = taskBookMesh.position.clone();
         objectMesh.add(taskBookMesh);
+        activeCategoryBadge = createCategoryBadge('PROJECTS');
+        activeCategoryBadge.position.set(0, 0.22, 0);
+        objectMesh.add(activeCategoryBadge);
         objectMesh.visible = true;
     } catch (error) {
         const status = document.getElementById('status');
         status.textContent = `Local 3D asset error: ${error.message}`;
         status.className = 'error';
+    }
+}
+
+function createCategoryBadge(category) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 64;
+    const context = canvas.getContext('2d');
+    context.fillStyle = '#17452d';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.strokeStyle = '#8ee3a6';
+    context.lineWidth = 5;
+    context.strokeRect(3, 3, canvas.width - 6, canvas.height - 6);
+    context.fillStyle = '#ffffff';
+    context.font = 'bold 36px sans-serif';
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.fillText(category.toUpperCase(), canvas.width / 2, canvas.height / 2);
+    const texture = new THREE.CanvasTexture(canvas);
+    const badge = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false }));
+    badge.scale.set(0.28, 0.07, 1);
+    return badge;
+}
+
+function updateInventory(inventory, activeItemId) {
+    if (!inventoryBookTemplate) return;
+    if (!Array.isArray(inventory)) {
+        for (const book of inventoryBookMeshes.values()) book.visible = false;
+        return;
+    }
+    const shelves = [leftShelfBookcase, rightShelfBookcase];
+    const slots = [0, 0];
+    for (const item of inventory) {
+        const shelfIndex = item.shelf;
+        const shelf = shelves[shelfIndex];
+        let book = inventoryBookMeshes.get(item.id);
+        if (!book) {
+            book = new THREE.Group();
+            const model = inventoryBookTemplate.clone(true);
+            book.add(model);
+            const badge = createCategoryBadge(item.category);
+            badge.position.set(0, 0.22, 0);
+            book.add(badge);
+            book.scale.setScalar(0.5);
+            inventoryBookMeshes.set(item.id, book);
+        }
+        if (book.parent !== shelf.group) {
+            book.parent?.remove(book);
+            shelf.group.add(book);
+        }
+        const slot = slots[shelfIndex]++;
+        book.position.fromArray(inventoryBookPosition(slot));
+        book.visible = item.id !== activeItemId;
+        book.userData.fileData = { name: item.name, markers: { tag: item.category } };
+        book.userData.state = item.status === 'sorted' ? 'Sorted into Projects' : 'Misfiled: Projects';
     }
 }
 
@@ -569,14 +620,6 @@ function setupCameraControls() {
     document.getElementById('sim-start').addEventListener('click', () => sendControl({ action: 'start', mode: document.getElementById('sim-mode').value }));
     document.getElementById('sim-stop').addEventListener('click', () => sendControl({ action: 'stop' }));
     document.getElementById('sim-reset').addEventListener('click', () => sendControl({ action: 'reset' }));
-    const manualActions = { forward: [250, 0, 0, 0, 0], left: [0, 250, 0, 0, 0], right: [0, 0, 250, 0, 0], grasp: [0, 0, 0, 250, 0], release: [0, 0, 0, 0, 250] };
-    document.querySelectorAll('#manual-controls button').forEach(button => {
-        const send = pressed => sendControl({ action: 'manual', values: pressed ? manualActions[button.dataset.action] : [0, 0, 0, 0, 0] });
-        button.addEventListener('pointerdown', event => { event.preventDefault(); button.setPointerCapture(event.pointerId); send(true); });
-        for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) button.addEventListener(name, () => send(false));
-        button.addEventListener('keydown', event => { if (event.key === ' ' || event.key === 'Enter') send(true); });
-        button.addEventListener('keyup', event => { if (event.key === ' ' || event.key === 'Enter') send(false); });
-    });
 }
 
 async function sendControl(command) {
@@ -601,6 +644,9 @@ function showFile(file, state = file.state) {
 
 function updateFromState(state, info) {
     if (!state || !state.fly) return;
+    updateInventory(info.inventory, info.active_item_id);
+    objectMesh.visible = Array.isArray(info.inventory) ? info.active_item_id != null : true;
+    if (activeCategoryBadge) activeCategoryBadge.visible = Boolean(info.active_item);
     
     // Update fly position and orientation
     const fly = state.fly;
@@ -653,6 +699,7 @@ function updateMetrics(info) {
     
     document.getElementById('target').textContent = 
         info.target_shelf === 0 ? 'Left (Documents)' : 'Right (Projects)';
+    if (info.total_items) document.getElementById('inventory-progress').textContent = `${info.delivered_items || 0} / ${info.total_items}`;
     document.getElementById('steps').textContent = info.steps || '-';
     document.getElementById('brain_activity').textContent = 
         info.brain_activity?.toLocaleString() || '-';
@@ -665,9 +712,12 @@ function updateMetrics(info) {
     
     const sourceShelf = info.target_shelf === 0 ? 1 : 0;
     const currentShelf = info.object_carried ? info.target_shelf : sourceShelf;
-    const task = info.task_status || (info.object_delivered ? 'Item delivered' : info.object_is_carried ? 'Carrying item' : info.running ? 'Seeking target item' : 'Waiting for simulation');
-    const shelfPath = currentShelf === 0 ? '/root/documents' : '/root/projects';
-    document.getElementById('task-state').textContent = `Task: ${task} · ${shelfPath}`;
+    const task = info.task_status || (info.object_delivered ? 'Book delivered' : info.object_is_carried ? 'Carrying book' : info.running ? 'Finding next book' : 'Ready to sort');
+    if (info.active_item) showFile({ ...info.active_item, markers: { tag: info.active_item.category } }, info.object_is_carried ? 'Carried by fly' : 'Misfiled: Projects');
+    else if (info.total_items) showFile({ name: 'No misfiled books left', markers: { tag: '—' } }, 'Sorting complete');
+    const sourcePath = currentShelf === 0 ? 'Documents' : 'Projects';
+    const destinationPath = info.target_shelf === 0 ? 'Documents' : 'Projects';
+    document.getElementById('task-state').textContent = `Task: ${task}${info.total_items ? ` · ${sourcePath} → ${destinationPath}` : ''}`;
     const training = info.training;
     document.getElementById('training-progress').textContent = training
         ? `Generation ${training.generation + 1} · best-policy success ${(training.best_policy_success * 100).toFixed(1)}%`
@@ -698,6 +748,9 @@ async function pollState() {
         } else if (data.status === 'stopped') {
             status.textContent = 'Simulation stopped';
             status.className = '';
+        } else if (data.status === 'completed') {
+            status.textContent = 'Sorting complete — 4 books on Projects';
+            status.className = 'connected';
         } else {
             status.textContent = 'Loading neural simulation…';
             status.className = '';
