@@ -68,9 +68,9 @@ def test_brain_light():
         brain = BrainAdapter(dt=0.2, w_scale=0.5)
         
         # Check that neuron groups were found
-        assert len(brain.visual_left) > 0, "No visual_left neurons"
-        assert len(brain.visual_right) > 0, "No visual_right neurons"
-        assert len(brain.forward) > 0, "No forward neurons"
+        assert len(brain.visual_left.idx) > 0, "No visual_left neurons"
+        assert len(brain.visual_right.idx) > 0, "No visual_right neurons"
+        assert len(brain.forward.idx) > 0, "No forward neurons"
         
         print(f"✓ Brain adapter OK ({brain.conn.N:,} neurons loaded)")
         return True

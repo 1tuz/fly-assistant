@@ -1,0 +1,1 @@
+../flybrain/static/fly/model.js

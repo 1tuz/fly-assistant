@@ -19,7 +19,7 @@ from environment import ShelfTaskEnv
 from agent import LinearPolicy, SimpleES
 
 
-def evaluate_policy(env, policy, n_episodes=5, seed=0):
+def evaluate_policy(env, policy, n_episodes=5, seed=0, stop_event=None):
     """
     Evaluate policy over multiple episodes.
     
@@ -39,6 +39,8 @@ def evaluate_policy(env, policy, n_episodes=5, seed=0):
         episode_delivered = False
         
         while not (terminated or truncated):
+            if stop_event and stop_event.is_set():
+                raise InterruptedError("training stopped")
             action = policy(obs)
             # Ensure action has at least 5 dimensions if needed
             if len(action) < getattr(env, 'action_dim', 5):
@@ -82,7 +84,7 @@ def evaluate_policy(env, policy, n_episodes=5, seed=0):
     }
 
 
-def train(args):
+def train(args, on_progress=None, env=None, stop_event=None):
     """Main training loop."""
     print("🪰 Fly Assistant Training")
     print("=" * 50)
@@ -97,7 +99,9 @@ def train(args):
     
     # Initialize environment
     print("Initializing environment (loading connectome)...")
-    env = ShelfTaskEnv(max_steps=args.max_steps, step_ms=args.step_ms)
+    owns_env = env is None
+    if env is None:
+        env = ShelfTaskEnv(max_steps=args.max_steps, step_ms=args.step_ms)
     print(f"✓ Environment ready (obs_dim={env.observation_dim}, action_dim={env.action_dim})")
     print("")
     
@@ -149,10 +153,15 @@ def train(args):
         # Evaluate each candidate
         rewards = []
         for i, params in enumerate(candidates):
+            if stop_event and stop_event.is_set():
+                break
             policy.set_params(params)
             result = evaluate_policy(env, policy, n_episodes=args.eval_episodes, 
-                                    seed=args.seed + gen * 1000 + i)
+                                    seed=args.seed + gen * 1000 + i, stop_event=stop_event)
             rewards.append(result['mean_return'])
+
+        if stop_event and stop_event.is_set():
+            break
         
         # Update ES
         es.tell(epsilon, rewards)
@@ -160,7 +169,7 @@ def train(args):
         # Evaluate best policy
         policy.set_params(es.get_best())
         best_result = evaluate_policy(env, policy, n_episodes=args.eval_episodes * 2,
-                                     seed=args.seed + gen * 10000)
+                                     seed=args.seed + gen * 10000, stop_event=stop_event)
         
         gen_time = time.time() - gen_start
         
@@ -176,6 +185,8 @@ def train(args):
             'time': gen_time
         }
         training_log.append(log_entry)
+        if on_progress:
+            on_progress(log_entry)
         
         # Save best policy
         if best_result['mean_return'] > best_return:
@@ -214,7 +225,8 @@ def train(args):
         print(f"Final best delivery rate: {best_result['delivery_rate']:.1%}")
     print(f"Policies saved to: {output_dir}")
     
-    env.close()
+    if owns_env:
+        env.close()
 
 
 def main():

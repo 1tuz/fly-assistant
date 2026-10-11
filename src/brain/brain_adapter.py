@@ -1,179 +1,52 @@
-"""
-Brain simulation adapter - wraps flybrain engine for our shelf-selection task.
-
-Uses flybrain's real connectome simulation (165,384 neurons) with custom sensory inputs
-and motor readouts tailored for spatial navigation.
-"""
-import sys
+"""Adapter from the shelf task's inputs to flybrain's current simulation API."""
 import os
-import numpy as np
+import sys
 
-# Add flybrain to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../flybrain'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../flybrain"))
 
-import engine
+import flyenv
 
 
 class BrainAdapter:
-    """
-    Wraps flybrain's LIF connectome simulation for the shelf-selection task.
-    
-    Input channels:
-    - Visual stimulus (left/right target indicator via LC4 looming neurons)
-    - Proprioception (simulated position feedback)
-    
-    Output channels:
-    - Forward movement (DNp09)
-    - Turning (DNa01/02 left/right)
-    - Speed/activity level
-    """
-    
     def __init__(self, dt=0.2, w_scale=0.5):
-        """
-        Args:
-            dt: Simulation timestep in ms
-            w_scale: Synaptic weight scaling (0.5 to avoid runaway activity)
-        """
-        print("Loading connectome...")
-        self.conn = engine.Connectome()
-        
-        # Simulation parameters matching flybrain defaults
-        self.params = dict(
-            model="shiu",
-            dt=dt,
-            tau_m=20.0,
-            tau_syn=5.0,
-            v_th=7.0,
-            refrac=2.2,
-            delay=1.8,
-            w_syn=0.275,
-            f_poi=250.0,
-            w_scale=w_scale,
-            std_u=0.0,    # No synaptic depression for now
-            std_tau=200.0
-        )
-        
-        # Initialize simulation state
-        self.sim = engine.LIF(self.conn, **self.params)
-        
-        # Define input neuron groups for our task
-        self._setup_channels()
-        
-        print(f"Brain adapter ready: {self.conn.N:,} neurons")
-    
-    def _setup_channels(self):
-        """Define neuron groups for inputs and outputs."""
-        # Visual stimulus neurons (looming detectors - LC4)
+        self.brain = flyenv.FlyBrain(params={"model": "shiu", "dt": dt, "w_scale": w_scale})
+        self.conn = self.brain.C
         self.visual_left = self._find_neurons("^LC4$", side="L")
         self.visual_right = self._find_neurons("^LC4$", side="R")
-        
-        # Walking command neurons (one synapse upstream of descending neurons)
-        # These are what keyboard mode uses in flybrain
-        self.forward = self._find_neurons("^ICL012m$")  # → DNp09
-        self.turn_left = self._find_neurons("^LAL018$", side="L")  # → DNa01/02
+        self.forward = self._find_neurons("^ICL012m$")
+        self.turn_left = self._find_neurons("^LAL018$", side="L")
         self.turn_right = self._find_neurons("^LAL018$", side="R")
-        
-        # Front leg descending neurons (DNg12_e) for reaching / grasping
         self.grasp_left = self._find_neurons("^DNg12_e$", side="L")
         self.grasp_right = self._find_neurons("^DNg12_e$", side="R")
-        
-        # Readout channels (descending neurons & motor neurons)
-        self.readout_fwd = self._find_neurons("^DNp09$")
-        self.readout_turn_left = self._find_neurons("^DNa0[12]$", side="L")
-        self.readout_turn_right = self._find_neurons("^DNa0[12]$", side="R")
-        self.readout_grasp_left = self._find_neurons("^T1L_pro$")
-        self.readout_grasp_right = self._find_neurons("^T1R_pro$")
-        
-        print(f"Input channels: visual_left={len(self.visual_left)}, "
-              f"visual_right={len(self.visual_right)}, "
-              f"forward={len(self.forward)}, "
-              f"turn_left={len(self.turn_left)}, "
-              f"turn_right={len(self.turn_right)}, "
-              f"grasp_left={len(self.grasp_left)}, "
-              f"grasp_right={len(self.grasp_right)}")
-        print(f"Output channels: fwd={len(self.readout_fwd)}, "
-              f"turn_left={len(self.readout_turn_left)}, "
-              f"turn_right={len(self.readout_turn_right)}, "
-              f"grasp_left={len(self.readout_grasp_left)}, "
-              f"grasp_right={len(self.readout_grasp_right)}")
-    
+
     def _find_neurons(self, pattern, side=None):
-        """Find neuron indices matching pattern and optional side."""
-        import re
-        regex = re.compile(pattern)
-        indices = []
-        for i in range(self.conn.N):
-            if regex.match(self.conn.type[i]):
-                if side is None or self.conn.side[i] == side:
-                    indices.append(i)
-        return np.array(indices, dtype=np.int32)
-    
+        return self.brain.group(pattern, side=side)
+
     def reset(self, seed=None):
-        """Reset simulation to resting state."""
-        if seed is not None:
-            np.random.seed(seed)
-        self.sim.reset()
-    
+        self.brain.reset(seed=0 if seed is None else seed)
+
     def step(self, action, ms=50):
-        """
-        Run simulation for ms milliseconds with given actions.
-        
-        Args:
-            action: dict with keys 'visual_target' (0=left, 1=right),
-                   'forward', 'turn_left', 'turn_right' (Poisson rates in Hz)
-            ms: Duration in milliseconds
-        
-        Returns:
-            dict with motor output rates and activity metrics
-        """
-        # Build stimulation dict for flybrain engine
-        stim = {}
-        
-        # Visual target indication
-        if 'visual_target' in action:
-            target = action['visual_target']
-            if target == 0:  # Left shelf
-                stim[tuple(self.visual_left)] = 150.0
-            elif target == 1:  # Right shelf
-                stim[tuple(self.visual_right)] = 150.0
-        
-        # Motor commands (agent's actions)
-        if action.get('forward', 0) > 0:
-            stim[tuple(self.forward)] = float(action['forward'])
-        if action.get('turn_left', 0) > 0:
-            stim[tuple(self.turn_left)] = float(action['turn_left'])
-        if action.get('turn_right', 0) > 0:
-            stim[tuple(self.turn_right)] = float(action['turn_right'])
-        if action.get('grasp_left', 0) > 0:
-            stim[tuple(self.grasp_left)] = float(action['grasp_left'])
-        if action.get('grasp_right', 0) > 0:
-            stim[tuple(self.grasp_right)] = float(action['grasp_right'])
-        
-        # Run simulation
-        self.sim.run(stim, ms)
-        
-        # Read motor outputs (rates in Hz over the period)
-        # Mask out directly stimulated neurons
-        driven_mask = np.zeros(self.conn.N, dtype=bool)
-        for idx_tuple in stim.keys():
-            driven_mask[np.array(idx_tuple)] = True
-        
-        def channel_rate(indices):
-            """Mean rate of channel, excluding driven neurons."""
-            valid = indices[~driven_mask[indices]]
-            if len(valid) == 0:
-                return 0.0
-            spikes = self.sim.spikes[valid].sum()
-            return float(spikes) / (len(valid) * ms / 1000.0)
-        
-        output = {
-            'forward': channel_rate(self.readout_fwd),
-            'turn_left': channel_rate(self.readout_turn_left),
-            'turn_right': channel_rate(self.readout_turn_right),
-            'grasp_left': channel_rate(self.readout_grasp_left),
-            'grasp_right': channel_rate(self.readout_grasp_right),
-            'n_active': int(self.sim.n_active),
-            'total_spikes': int(self.sim.spikes.sum())
+        drive = {}
+        target = action.get("visual_target")
+        # Strong LC4 drive suppresses the walking readout in this connectome.
+        if target == 0:
+            drive[self.visual_left] = 10.0
+        elif target == 1:
+            drive[self.visual_right] = 10.0
+        for key, group in (("forward", self.forward), ("turn_left", self.turn_left),
+                           ("turn_right", self.turn_right), ("grasp_left", self.grasp_left),
+                           ("grasp_right", self.grasp_right)):
+            rate = float(action.get(key, 0.0))
+            if rate > 0:
+                drive[group] = rate
+
+        rates = self.brain.step(drive, ms=ms)
+        return {
+            "forward": rates.get("fwd", 0.0),
+            "turn_left": rates.get("turnL", 0.0),
+            "turn_right": rates.get("turnR", 0.0),
+            "grasp_left": rates.get("T1L_pro", 0.0),
+            "grasp_right": rates.get("T1R_pro", 0.0),
+            "n_active": self.brain.n_active,
+            "total_spikes": len(self.brain.spikes),
         }
-        
-        return output

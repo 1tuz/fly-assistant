@@ -25,6 +25,8 @@ from environment import (
     FolderHierarchy,
     PhysicsMode,
 )
+from brain import BrainAdapter
+from server.server import autonomous_action
 
 
 class DummyBrainAdapter:
@@ -55,6 +57,13 @@ class DummyBrainAdapter:
 
 class TestGraspingIntegration(unittest.TestCase):
     """Integration test suite for fly object grasping and delivery."""
+
+    def test_connectome_walk_output_survives_target_visual_input(self):
+        brain = BrainAdapter(dt=0.2, w_scale=0.5)
+        brain.reset(seed=0)
+        output = brain.step({"visual_target": 1, "forward": 150.0}, ms=300)
+        self.assertGreater(output["forward"], 20.0)
+        self.assertLess(output["n_active"], 500)
 
     def test_fly_can_grasp_object_when_near(self):
         """Test 1: Fly can grasp object when within GRASP_RADIUS and grasp activation > 0.2."""
@@ -123,6 +132,30 @@ class TestGraspingIntegration(unittest.TestCase):
                 err_msg="Carried object position must track fly position + heading offset",
             )
 
+    def test_fly_keeps_inertial_motion_then_slows_to_rest(self):
+        world = WorldState(target_shelf=1, seed=42)
+        world.update_fly(forward_activation=1.0, turn_activation=0.0)
+        first_position = world.fly_pos[2]
+
+        world.update_fly(forward_activation=0.0, turn_activation=0.0)
+        self.assertGreater(world.fly_pos[2], first_position)
+        coasting_position = world.fly_pos[2]
+
+        for _ in range(12):
+            world.update_fly(forward_activation=0.0, turn_activation=0.0)
+        self.assertGreater(world.fly_pos[2], coasting_position)
+        self.assertLess(world.fly_speed, 0.001)
+
+    def test_autonomous_keeps_carrying_book_until_inside_delivery_radius(self):
+        world = WorldState(target_shelf=1, seed=42)
+        world.fly_pos = world.SHELF_RIGHT_POS + np.array([-1.8, 0.0, 0.0])
+        world.fly_yaw = np.pi / 2
+        world.object_is_carried = True
+
+        action = autonomous_action(world)
+        self.assertEqual(action[0], 250.0)
+        self.assertEqual(action[3], 0.0)
+
     def test_object_releases_at_target_and_on_command(self):
         """Test 3: Object releases on explicit release command or upon reaching target shelf."""
         # Case A: Manual release away from target shelf drops object without marking delivered
@@ -146,6 +179,7 @@ class TestGraspingIntegration(unittest.TestCase):
         world.reset(target_shelf=0, seed=42)
         # Position fly just outside SHELF_REACH_RADIUS (1.5) but inside GRASP_RADIUS (2.0)
         world.fly_pos = world.SHELF_LEFT_POS + np.array([0.0, 0.0, -1.7])
+        world.object_pos = world.fly_pos + np.array([0.0, 0.0, 1.0])
         world.update_grasp(grasp_activation=0.8, release_activation=0.0)
         self.assertTrue(world.object_is_carried)
         self.assertFalse(world.object_delivered)

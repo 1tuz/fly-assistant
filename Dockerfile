@@ -8,20 +8,19 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Copy project files
 COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Keep flybrain aligned with the repository submodule and cache its large setup layer.
+RUN git clone https://github.com/jppaquet/flybrain.git && \
+    cd flybrain && \
+    git checkout c582cfdb90c49cfa7da71d0f5ec958dc17730223 && \
+    bash setup.sh
+
 COPY src/ ./src/
 COPY web/ ./web/
 COPY tests/ ./tests/
 COPY train.py .
-
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Clone and setup flybrain (this takes ~10 minutes)
-RUN git clone https://github.com/jppaquet/flybrain.git && \
-    cd flybrain && \
-    bash setup.sh || true
 
 # Create mock data directory
 RUN mkdir -p /data/documents /data/archive

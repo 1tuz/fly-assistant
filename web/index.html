@@ -7,9 +7,36 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <button id="panel-toggle" type="button" aria-label="Hide controls" aria-controls="info">Hide panel</button>
     <div id="info">
         <h1>🪰 Fly Assistant</h1>
         <div id="status">Connecting...</div>
+        <div id="task-state" aria-live="polite">Waiting for simulation state</div>
+        <div id="camera-controls">
+            <button id="camera-reset" type="button">Reset camera</button>
+            <button id="camera-follow" type="button" aria-pressed="false">Follow fly: off</button>
+            <small>WASD move · Q/E down/up · Shift faster · drag to look · double-click to focus</small>
+        </div>
+        <div id="operation-controls">
+            <label for="sim-mode">Simulation mode</label>
+            <select id="sim-mode">
+                <option value="autonomous">Autonomous</option>
+                <option value="manual">Manual</option>
+                <option value="train">Training</option>
+                <option value="replay">Replay trained policy</option>
+            </select>
+            <button id="sim-start" type="button">Start</button>
+            <button id="sim-stop" type="button">Stop</button>
+            <button id="sim-reset" type="button">Reset</button>
+            <div id="manual-controls" aria-label="Manual fly controls">
+                <button data-action="forward" type="button">Forward</button>
+                <button data-action="left" type="button">Turn left</button>
+                <button data-action="right" type="button">Turn right</button>
+                <button data-action="grasp" type="button">Grasp</button>
+                <button data-action="release" type="button">Release</button>
+            </div>
+            <div id="training-progress">Training idle</div>
+        </div>
         <div id="metrics">
             <div>Target Shelf: <span id="target">-</span></div>
             <div>Steps: <span id="steps">-</span></div>
@@ -18,22 +45,12 @@
             <div>Motor Turn L: <span id="motor_turn_l">-</span> Hz</div>
             <div>Motor Turn R: <span id="motor_turn_r">-</span> Hz</div>
         </div>
-        <div id="folder-controls" style="margin-top: 15px; border-top: 1px solid #333; padding-top: 10px;">
-            <div style="font-weight: 600; margin-bottom: 8px;">📂 Virtual Filesystem</div>
-            <div>Current Path: <span id="current-path">/root/documents</span></div>
-            <div style="margin: 8px 0; display: flex; align-items: center; justify-content: space-between;">
-                <label for="depth-slider">Nesting Depth:</label>
-                <input type="range" id="depth-slider" min="0" max="4" value="1" style="width: 100px;">
-                <span id="depth-val">1</span>
-            </div>
-            <div>Active Files: <span id="file-count">4</span></div>
-        </div>
         <div id="file-metadata" style="margin-top: 10px; border-top: 1px solid #333; padding-top: 10px; font-size: 12px;">
             <div style="font-weight: 600; margin-bottom: 4px;">🏷️ Selected File</div>
-            <div>Name: <span id="meta-name">q3_report.pdf</span></div>
-            <div>Size: <span id="meta-size">2.0 MB</span></div>
-            <div>Tag: <span id="meta-tag" style="color: #4af;">finance</span></div>
-            <div>State: <span id="meta-state">On Shelf</span></div>
+            <div>Name: <span id="meta-name">Select an item</span></div>
+            <div>Size: <span id="meta-size">—</span></div>
+            <div>Tag: <span id="meta-tag" style="color: #4af;">—</span></div>
+            <div>State: <span id="meta-state">—</span></div>
         </div>
     </div>
     
@@ -42,12 +59,21 @@
     <script type="importmap">
     {
         "imports": {
-            "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+            "three": "./vendor/three/three.module.min.js",
+            "three/addons/loaders/GLTFLoader.js": "./vendor/three-addons/GLTFLoader.js"
         }
     }
     </script>
     
+    <script>
+        const showScriptError = message => {
+            const status = document.getElementById('status');
+            status.textContent = `Scene error: ${message}`;
+            status.className = 'error';
+        };
+        window.addEventListener('error', event => showScriptError(event.message || event.target?.src || 'module load failed'));
+        window.addEventListener('unhandledrejection', event => showScriptError(event.reason?.message || String(event.reason)));
+    </script>
     <script type="module" src="scene.js"></script>
 </body>
 </html>

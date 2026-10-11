@@ -5,6 +5,12 @@ services:
     build: .
     ports:
       - "8766:8766"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8766/api/health && curl -fsS http://127.0.0.1:8766/api/state >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 60s
     volumes:
       # Mount directory with your files (fly will move them between folders)
       - ./mock_data:/data:rw

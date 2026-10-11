@@ -25,16 +25,18 @@ class ShelfTaskEnv:
     - Max steps reached (truncated)
     """
     
-    def __init__(self, max_steps=200, step_ms=50, render_mode=None):
+    def __init__(self, max_steps=200, step_ms=50, render_mode=None, visual_input=True):
         """
         Args:
             max_steps: Maximum steps per episode
             step_ms: Simulation duration per step (milliseconds)
             render_mode: None or 'human' (not implemented yet)
+            visual_input: Drive the target shelf's LC4 neurons during each step.
         """
         self.max_steps = max_steps
         self.step_ms = step_ms
         self.render_mode = render_mode
+        self.visual_input = visual_input
         
         # Initialize brain simulation (expensive, done once)
         self.brain = BrainAdapter(dt=0.2, w_scale=0.5)
@@ -104,7 +106,7 @@ class ShelfTaskEnv:
         
         # Prepare brain input
         brain_action = {
-            'visual_target': self.world.target_shelf,
+            'visual_target': self.world.target_shelf if self.visual_input else None,
             'forward': float(action[0]),
             'turn_left': float(action[1]),
             'turn_right': float(action[2]),
@@ -141,7 +143,7 @@ class ShelfTaskEnv:
         if self.world.object_delivered:
             reward = 1.0
             terminated = True
-        elif self.world.at_wrong_shelf():
+        elif self.world.object_is_carried and self.world.at_wrong_shelf():
             reward = -1.0
             terminated = True
         truncated = self.steps >= self.max_steps

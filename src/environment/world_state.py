@@ -35,10 +35,12 @@ class WorldState:
         # Fly state
         self.fly_pos = self.FLY_START_POS.copy()
         self.fly_yaw = 0.0  # Facing +Z initially
+        self.fly_speed = 0.0
+        self.fly_turn_rate = 0.0
         
-        # Object on target shelf
-        self.object_pos = (self.SHELF_LEFT_POS if target_shelf == 0 
-                          else self.SHELF_RIGHT_POS).copy()
+        # The object starts on the shelf opposite its requested destination.
+        self.object_pos = (self.SHELF_RIGHT_POS if target_shelf == 0
+                           else self.SHELF_LEFT_POS).copy()
         self.object_is_carried = False
         self.object_delivered = False
     def reset(self, target_shelf=None, seed=None):
@@ -53,8 +55,10 @@ class WorldState:
         
         self.fly_pos = self.FLY_START_POS.copy()
         self.fly_yaw = 0.0
-        self.object_pos = (self.SHELF_LEFT_POS if self.target_shelf == 0
-                          else self.SHELF_RIGHT_POS).copy()
+        self.fly_speed = 0.0
+        self.fly_turn_rate = 0.0
+        self.object_pos = (self.SHELF_RIGHT_POS if self.target_shelf == 0
+                           else self.SHELF_LEFT_POS).copy()
         self.object_is_carried = False
         self.object_delivered = False
     def update_fly(self, forward_activation, turn_activation):
@@ -65,18 +69,12 @@ class WorldState:
             forward_activation: 0-1, how much to move forward
             turn_activation: -1 to +1, negative=left, positive=right
         """
-        # Forward movement
-        if forward_activation > 0.01:
-            dx = np.sin(self.fly_yaw) * self.FLY_MOVE_SPEED * forward_activation
-            dz = np.cos(self.fly_yaw) * self.FLY_MOVE_SPEED * forward_activation
-            self.fly_pos[0] += dx
-            self.fly_pos[2] += dz
-        
-        # Turning
-        if abs(turn_activation) > 0.01:
-            self.fly_yaw += self.FLY_TURN_SPEED * turn_activation
-            # Wrap angle to [-pi, pi]
-            self.fly_yaw = np.arctan2(np.sin(self.fly_yaw), np.cos(self.fly_yaw))
+        self.fly_speed += (np.clip(forward_activation, 0.0, 1.0) * self.FLY_MOVE_SPEED - self.fly_speed) * 0.35
+        self.fly_turn_rate += (np.clip(turn_activation, -1.0, 1.0) - self.fly_turn_rate) * 0.35
+        self.fly_yaw += self.FLY_TURN_SPEED * self.fly_turn_rate
+        self.fly_yaw = np.arctan2(np.sin(self.fly_yaw), np.cos(self.fly_yaw))
+        self.fly_pos[0] += np.sin(self.fly_yaw) * self.fly_speed
+        self.fly_pos[2] += np.cos(self.fly_yaw) * self.fly_speed
     
     def update_grasp(self, grasp_activation, release_activation):
         """
