@@ -1,0 +1,3 @@
+[submodule "flybrain"]
+	path = flybrain
+	url = https://github.com/jppaquet/flybrain.git

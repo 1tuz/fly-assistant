@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# Flybrain data files
+flybrain/malecns_graph.npz
+flybrain/neurons.csv
+flybrain/meta_cache.npz
+flybrain/*.feather
+flybrain/*.arrow
+
+# Training outputs
+runs/
+checkpoints/
+*.npy
+*.npz
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store

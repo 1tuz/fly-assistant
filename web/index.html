@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fly Assistant - 3D Visualization</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="info">
+        <h1>🪰 Fly Assistant</h1>
+        <div id="status">Connecting...</div>
+        <div id="metrics">
+            <div>Target Shelf: <span id="target">-</span></div>
+            <div>Steps: <span id="steps">-</span></div>
+            <div>Brain Activity: <span id="brain_activity">-</span> neurons</div>
+            <div>Motor Forward: <span id="motor_fwd">-</span> Hz</div>
+            <div>Motor Turn L: <span id="motor_turn_l">-</span> Hz</div>
+            <div>Motor Turn R: <span id="motor_turn_r">-</span> Hz</div>
+        </div>
+    </div>
+    
+    <div id="container"></div>
+    
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+        }
+    }
+    </script>
+    
+    <script type="module" src="scene.js"></script>
+</body>
+</html>
