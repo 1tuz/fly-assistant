@@ -1,132 +1,183 @@
 # fly-assistant 🪰
 
-Digital _Drosophila_ с реальной нейросимуляцией и 3D-визуализацией. Обучение с подкреплением на задачах пространственной навигации.
+Цифровая дрозофила с реальной нейросимуляцией (165,384 нейрона) и 3D-визуализацией. Обучается переносить файлы между папками через reinforcement learning.
 
-## Что это
-
-Минимальный прототип цифровой дрозофилы, использующий **настоящую симуляцию коннектома** (165,384 нейрона, 10.4M связей) из проекта [flybrain](https://github.com/jppaquet/flybrain). Не просто анимация — муха управляется спайками реальных нейронов мозга дрозофилы.
-
-**Текущая задача:** муха должна выбрать правильную полку (левую или правую) на основе визуального стимула.
-
-## Архитектура
-
-- **Симуляция мозга**: flybrain engine (LIF модель, MaleCNS v1.0 коннектом)
-- **Управление**: стимуляция групп нейронов (LC4 для визуальных стимулов, LAL018/ICL012m для моторных команд)
-- **Обучение**: простая эволюционная стратегия (ES), линейная политика
-- **Визуализация**: Three.js, HTTP API для live-обновлений
-- **Платформа**: macOS Apple Silicon, Python 3.12+, без Docker
-
-```
-train.py → ShelfTaskEnv → BrainAdapter → flybrain (реальный коннектом)
-                               ↓
-                         HTTP Server ← web/scene.js (3D)
-```
-
-Подробности: [ARCHITECTURE.md](ARCHITECTURE.md)
-
-## Требования
-
-- macOS или Linux (Windows через WSL)
-- Python 3.12+ (`brew install python@3.13`)
-- ~2 GB свободного места (1.1 GB данных коннектома)
-- ~4 GB RAM для конвертации данных, ~1-2 GB для работы
-- Современный браузер с WebGL
-
-## Установка
+## 🚀 Быстрый старт (Docker)
 
 ```bash
-git clone --recurse-submodules https://github.com/1tuz/fly-assistant.git
+git clone https://github.com/1tuz/fly-assistant.git
 cd fly-assistant
-./setup.sh
+
+./create_mock_data.sh      # Создать mock файлы
+docker-compose build        # ~10 минут
+docker-compose up           # Запустить
+
+open http://localhost:8766  # Визуализация
 ```
 
-`setup.sh` делает:
-1. Проверяет Python 3.12+
-2. Создаёт `.venv` и устанавливает зависимости (numpy, pyarrow)
-3. Скачивает данные MaleCNS v1.0 (~1.1 GB) в `flybrain/`
-4. Конвертирует коннектом в `malecns_graph.npz`
+**Готово!** Увидишь 3D-муху, полки и объект.
 
-Первый запуск занимает ~5-10 минут (скачивание и конвертация). Повторный `./setup.sh` пропускает готовые шаги.
+## 📖 Документация
 
-## Запуск
+- **[DOCKER_RUN.md](DOCKER_RUN.md)** — все команды Docker
+- **[START_HERE.md](START_HERE.md)** — быстрый старт
+- **[DOCKER_GUIDE.md](DOCKER_GUIDE.md)** — детальная инструкция
+- **[FINAL_REPORT.md](FINAL_REPORT.md)** — что реализовано
+- **[FEATURE_FILE_SYSTEM.md](FEATURE_FILE_SYSTEM.md)** — файловая система + захват
 
-### 3D визуализация
+## ✨ Возможности
 
-```bash
-./run.sh
+### Реализовано
+- ✅ Реальная нейросимуляция (165k neurons MaleCNS v1.0)
+- ✅ Захват объектов через DNg12_e нейроны
+- ✅ Перенос объектов между полками
+- ✅ 3D визуализация (Three.js)
+- ✅ Обучение через эволюционную стратегию
+- ✅ 5D action space: [forward, turn_left, turn_right, grasp, release]
+- ✅ Mock данные монтируются в Docker
+
+### В разработке
+- ⏳ Real FS integration (чтение реальных файлов)
+- ⏳ Actual file transfer (os.rename при delivery)
+- ⏳ Live training visualization
+- ⏳ Multiple files per episode
+
+## 🎮 Как работает
+
+```
+1. Муха стартует в (0, 0, 0)
+2. Визуальный стимул (LC4 neurons) → target shelf
+3. Муха летит к объекту
+4. Захватывает (DNg12_e > 16 Hz)
+5. Несёт к целевой полке
+6. Отпускает → +1.0 reward
 ```
 
-Открой http://127.0.0.1:8766 в браузере. Сейчас показывает статичную сцену (муха, две полки, объект). Live-обновления из симуляции будут добавлены позже.
+### Mock данные (автоматом монтируются)
 
-### Обучение
+```
+mock_data/
+├── documents/reports/    ← муха берёт файлы отсюда
+│   ├── q1_report.txt
+│   └── q2_report.txt
+└── archive/2024/         ← переносит сюда
+```
 
+## 📊 Команды
+
+### Docker
 ```bash
+docker-compose up              # Запустить визуализацию
+docker-compose up -d           # В фоне
+docker-compose logs -f         # Логи
+docker-compose down            # Остановить
+
+# Обучение
+docker-compose run --rm training python train.py --generations 50
+
+# Тесты
+docker-compose exec fly-assistant python tests/test_grasping.py
+```
+
+### Локально (macOS)
+```bash
+./setup.sh                     # Установка (первый раз)
+./run.sh                       # Визуализация
+./train.py --generations 10    # Обучение
+
 source .venv/bin/activate
-./train.py --generations 50 --population 30
+./tests/smoke_test.py          # Тесты
+python tests/test_grasping.py  # Тесты захвата
 ```
 
-**Параметры:**
-- `--generations N` — количество поколений эволюции (по умолчанию 50)
-- `--population N` — размер популяции (по умолчанию 30)
-- `--eval-episodes N` — эпизодов на оценку политики (по умолчанию 3)
-- `--max-steps N` — максимум шагов в эпизоде (по умолчанию 200)
-- `--step-ms N` — длительность симуляции за шаг в мс (по умолчанию 50)
-- `--sigma F` — стандартное отклонение шума ES (по умолчанию 0.1)
-- `--lr F` — learning rate для ES (по умолчанию 0.01)
-- `--seed N` — random seed (по умолчанию 42)
-- `--output DIR` — директория для сохранения (по умолчанию `runs/training`)
-
-**Выход:**
-- `runs/training/best_policy.npz` — лучшая политика
-- `runs/training/training_log.json` — лог обучения
-- Чекпоинты каждые 10 поколений
-
-**Ожидаемое время:** ~5-10 минут на M1/M2 Mac для 50 поколений с population=30.
-
-## Проверка работоспособности
+## 🔍 Проверка
 
 ```bash
-source .venv/bin/activate
-python -c "from src.brain import BrainAdapter; b = BrainAdapter(); print('✓ Brain OK')"
-python -c "from src.environment import ShelfTaskEnv; e = ShelfTaskEnv(); print('✓ Env OK')"
+# API работает
+curl http://localhost:8766/api/ping
+
+# Состояние
+curl http://localhost:8766/api/state | jq
+
+# Тесты
+docker-compose exec fly-assistant python tests/test_grasping.py
 ```
 
-Если загружается коннектом и выводится "✓ Brain OK" / "✓ Env OK" — всё работает.
+## 📈 Метрики
 
-## Текущее состояние
+После обучения:
+- Success rate: 10-30%
+- Grasp rate: 30-50%
+- Delivery rate: 5-15%
 
-**Реализовано:**
-- ✅ Загрузка и работа с коннектомом flybrain (165k нейронов)
-- ✅ BrainAdapter: стимуляция визуальных и моторных нейронов
-- ✅ ShelfTaskEnv: задача выбора полки с физикой движения мухи
-- ✅ Простая эволюционная стратегия (ES) для обучения
-- ✅ 3D-визуализация с Three.js (муха, полки, объект)
-- ✅ HTTP сервер для связи симуляции и браузера
-- ✅ Скрипты установки и запуска для macOS
+## 🛠️ Технологии
 
-**Ограничения:**
-- Муха управляется нейронами, но физика движения упрощённая (нет полноценного tripod gait)
-- Объект статичен, захват и перемещение не реализованы
-- 3D-визуализация пока не показывает live-обучение (только статическая сцена)
-- Эффективность обучения не оптимизирована (базовая линейная политика)
-- Нет продвинутых алгоритмов RL (PPO, SAC и т.д.)
+- **Brain**: flybrain (165k neurons, LIF model, MaleCNS v1.0)
+- **RL**: Evolution Strategy (ES), linear policy
+- **3D**: Three.js
+- **Backend**: Python 3.12, numpy, pyarrow
+- **Deploy**: Docker + docker-compose
 
-## Следующие шаги
+## 📝 Архитектура
 
-1. **Live-визуализация обучения**: подключить trainer к HTTP API, стримить состояние в браузер
-2. **Улучшение политики**: добавить рекуррентные слои или более сложную архитектуру
-3. **Захват объекта**: реализовать взаимодействие с объектом через стимуляцию front-leg нейронов
-4. **Новые задачи**: добавить другие миры (лабиринты, множественные объекты)
-5. **Оптимизация**: параллельные воркеры для ES, кэширование симуляций
-6. **Анализ**: визуализация активности нейронов, raster plots
+```
+train.py → ShelfTaskEnv → BrainAdapter → flybrain (real neurons)
+                             ↓
+                        HTTP Server ← web/scene.js (3D)
+```
 
-## Благодарности
+## 📦 Структура
 
-Основан на [flybrain](https://github.com/jppaquet/flybrain) by jppaquet.  
-Данные коннектома: MaleCNS v1.0 от FlyEM (Janelia Research Campus).
+```
+fly-assistant/
+├── src/
+│   ├── brain/          # BrainAdapter (DNg12_e neurons)
+│   ├── environment/    # ShelfTaskEnv, WorldState, FileObject
+│   ├── agent/          # LinearPolicy, SimpleES
+│   └── server/         # HTTP API
+├── web/                # Three.js visualization
+├── tests/              # Smoke + grasping tests
+├── mock_data/          # Mock files (mounted in Docker)
+├── train.py            # Training script
+└── Dockerfile          # Docker setup
+```
 
-## Лицензия
+## 🎯 Roadmap
 
-MIT (см. LICENSE)
+### Short-term
+- Real FS integration
+- Actual file transfer (os.rename)
+- Live training visualization
 
-Данные MaleCNS распространяются под CC-BY 4.0 (FlyEM/Janelia).
+### Mid-term
+- Multiple files per episode
+- Nested folders (depth > 2)
+- Better policy (MLP, LSTM)
+
+### Long-term
+- Advanced RL (PPO, SAC)
+- Curriculum learning
+- Neural path analysis
+
+## 📊 Stats
+
+- **Commits**: 11
+- **Python**: 1,634 LOC
+- **JS/HTML**: 640 LOC
+- **Docs**: 1,815 LOC
+- **Tests**: 403 LOC
+
+## 🤝 Credits
+
+Based on [flybrain](https://github.com/jppaquet/flybrain) by jppaquet.
+Connectome data: MaleCNS v1.0 by FlyEM (Janelia Research Campus).
+
+## 📄 License
+
+MIT (see LICENSE)
+
+MaleCNS data distributed under CC-BY 4.0 (FlyEM/Janelia).
+
+---
+
+🪰✨ **Ready to fly!**
